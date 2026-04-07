@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Race Control v23 - PROFESIONAL CLOUD</title>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+
+    <style>
+        /* Mantenemos tus estilos v22 (Verde, Naranja, Rojo, Widget, etc.) */
+        :root { --color-verde: #28a745; --color-naranja: #fd7e14; --color-rojo: #dc3545; --accent: #007bff; --actc: #e30613; }
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; font-family: 'Segoe UI', sans-serif; background-color: #000; color: white; }
+        #bg-image { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-image: url('fondo_pista.jpg'), url('https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=2000'); background-size: cover; background-position: center; z-index: -2; }
+        #dynamic-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.4); z-index: -1; transition: background 0.8s ease; }
+        .f-verde { background: rgba(40, 167, 69, 0.92) !important; }
+        .f-naranja { background: rgba(253, 126, 20, 0.92) !important; }
+        .f-rojo { background: rgba(220, 53, 69, 0.95) !important; }
+        .weather-clock-widget { position: absolute; top: 20px; right: 25px; text-align: right; z-index: 1000; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 12px; border: 2px solid white; }
+        #local-time { font-size: 2.5rem; font-weight: 800; }
+        .sidebar { position: absolute; top: 20px; left: 20px; bottom: 80px; width: 260px; z-index: 100; }
+        .btn-sel { width: 100%; padding: 10px; margin-bottom: 5px; background: rgba(0,0,0,0.8); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; text-align: left; font-weight: bold; }
+        .active { background: var(--accent) !important; border-color: white !important; }
+        .display-main { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; pointer-events: none; }
+        #timer { font-size: 22vw; font-weight: 900; line-height: 0.75; text-shadow: 5px 5px 30px rgba(0,0,0,1); }
+        #config-panel { position: fixed; bottom: 0; left: 0; right: 0; background: #111; padding: 20px; border-top: 4px solid var(--accent); z-index: 2000; transition: 0.4s; }
+        #config-panel.minimized { transform: translateY(calc(100% - 40px)); }
+        .toggle-panel { position: absolute; top: -30px; right: 40px; background: var(--accent); color: white; border: none; padding: 5px 25px; border-radius: 8px 8px 0 0; cursor: pointer; }
+        .config-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+        input { width: 100%; padding: 6px; background: #222; color: white; border: 1px solid #444; border-radius: 4px; font-size: 11px; margin-bottom: 5px; }
+        .ui-hidden { opacity: 0; transform: translateY(30px); pointer-events: none; }
+    </style>
+</head>
+<body onclick="resetTimer()">
+
+<div id="bg-image"></div>
+<div id="dynamic-overlay"></div>
+
+<div class="weather-clock-widget">
+    <div id="local-date">CARGANDO...</div>
+    <div id="local-time">00:00:00</div>
+</div>
+
+<div id="sidebar-ui" class="sidebar">
+    <button class="btn-sel" style="background:var(--actc)" onclick="abrirLink('url_timing')">🔴 LIVESYNC ACTC</button>
+    <button class="btn-sel" style="background:#ff0000" onclick="abrirLink('url_yt')">📺 CANAL 9 VIVO</button>
+    <div id="botones-sesion" style="margin-top:15px">
+        </div>
+</div>
+
+<div class="display-main">
+    <div id="actividad-nombre">RACE CONTROL</div>
+    <div id="status">CONECTANDO A LA NUBE...</div>
+    <div id="timer">00:00:00</div>
+</div>
+
+<div id="config-panel" class="minimized">
+    <button class="toggle-panel" onclick="togglePanel()">⚙️ CONFIGURACIÓN NUBE</button>
+    <div class="config-grid">
+        <div>
+            <h5>Sesiones</h5>
+            <input type="text" id="n1"><input type="datetime-local" id="t1">
+            <input type="text" id="n2"><input type="datetime-local" id="t2">
+            <input type="text" id="n3"><input type="datetime-local" id="t3">
+        </div>
+        <div>
+            <h5>Finales</h5>
+            <input type="text" id="n4"><input type="datetime-local" id="t4">
+            <input type="text" id="n5"><input type="datetime-local" id="t5">
+        </div>
+        <div>
+            <h5>Links Transmisión</h5>
+            <input type="text" id="url_timing" placeholder="URL ACTC">
+            <input type="text" id="url_yt" placeholder="URL YouTube">
+        </div>
+        <div>
+            <h5>Control Maestro</h5>
+            <label>ID Sesión Activa (1-5):</label>
+            <input type="number" id="current_act_db" min="1" max="5">
+            <button onclick="guardarNube()" style="width:100%; padding:10px; background:var(--color-verde); color:white; border:none; cursor:pointer; font-weight:bold;">SUBIR A LA NUBE ☁️</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- CONFIGURACIÓN FIREBASE ---
+    const firebaseConfig ={ 
+  apiKey : "AIzaSyCWo3qwS5kVOEwQffU-z_ttPqfUfcroj1w" , 
+  authDomain : "racecontrol-e073d.firebaseapp.com" , 
+  projectId : "racecontrol-e073d" , 
+  storageBucket : "racecontrol-e073d.firebasestorage.app" , 
+  messagingSenderId : "31500622146" , 
+  appId : "1:31500622146:web:2b83f882c800c909d5d0db" , 
+  measurementId : "G-52LFM6V321" 
+};
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let sessionData = {};
+    let interval;
+    let idleTimer;
+
+    // ESCUCHAR CAMBIOS EN TIEMPO REAL
+    db.ref('race_control').on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            sessionData = data;
+            actualizarUIConNube();
+            console.log("Datos recibidos de la nube");
+        }
+    });
+
+    function actualizarUIConNube() {
+        // Llenar inputs del panel
+        for(let i=1; i<=5; i++) {
+            document.getElementById('n'+i).value = sessionData['n'+i] || "";
+            document.getElementById('t'+i).value = sessionData['t'+i] || "";
+        }
+        document.getElementById('url_timing').value = sessionData.url_timing || "";
+        document.getElementById('url_yt').value = sessionData.url_yt || "";
+        document.getElementById('current_act_db').value = sessionData.current_act || 1;
+
+        // Generar botones laterales
+        const container = document.getElementById('botones-sesion');
+        container.innerHTML = "";
+        for(let i=1; i<=5; i++) {
+            const btn = document.createElement('button');
+            btn.className = `btn-sel ${sessionData.current_act == i ? 'active' : ''}`;
+            btn.innerText = `${i}. ${sessionData['n'+i] || 'Sesión'}`;
+            btn.onclick = () => { if(confirm("¿Cambiar sesión para TODOS?")) db.ref('race_control').update({current_act: i}); };
+            container.appendChild(btn);
+        }
+
+        iniciarCronometro();
+    }
+
+    function guardarNube() {
+        const update = {
+            current_act: parseInt(document.getElementById('current_act_db').value)
+        };
+        for(let i=1; i<=5; i++) {
+            update['n'+i] = document.getElementById('n'+i).value;
+            update['t'+i] = document.getElementById('t'+i).value;
+        }
+        update.url_timing = document.getElementById('url_timing').value;
+        update.url_yt = document.getElementById('url_yt').value;
+        
+        db.ref('race_control').update(update).then(() => alert("¡Nube actualizada para todos!"));
+    }
+
+    function iniciarCronometro() {
+        if (interval) clearInterval(interval);
+        const act = sessionData.current_act || 1;
+        const nombre = sessionData['n' + act];
+        const inicioVal = sessionData['t' + act];
+        
+        document.getElementById('actividad-nombre').innerText = nombre || "ESPERANDO";
+        if(!inicioVal) return;
+
+        const inicio = new Date(inicioVal).getTime();
+        
+        interval = setInterval(() => {
+            const ahora = new Date().getTime();
+            const fin = inicio + (30 * 60000); 
+            const overlay = document.getElementById('dynamic-overlay');
+            const timerEl = document.getElementById('timer');
+
+            if (ahora < inicio) {
+                const diff = inicio - ahora;
+                const min = diff / 60000;
+                formatearTimer(diff);
+                if (min <= 3) overlay.className = "f-rojo";
+                else if (min <= 5) overlay.className = "f-naranja";
+                else if (min <= 10) overlay.className = "f-verde";
+                else overlay.className = "";
+                document.getElementById('status').innerText = "CUENTA REGRESIVA";
+            } else if (ahora <= fin) {
+                const rest = fin - ahora;
+                formatearTimer(rest);
+                if (rest <= 300000) overlay.className = "f-rojo";
+                else overlay.className = "f-verde";
+                document.getElementById('status').innerText = "EN PISTA";
+            } else {
+                timerEl.innerText = "00:00:00";
+                overlay.className = "";
+                document.getElementById('status').innerText = "FINALIZADO";
+                clearInterval(interval);
+            }
+        }, 1000);
+    }
+
+    function formatearTimer(ms) {
+        const h = Math.floor(ms / 3600000);
+        const m = Math.floor((ms % 3600000) / 60000);
+        const s = Math.floor((ms % 60000) / 1000);
+        document.getElementById('timer').innerText = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+    }
+
+    function updateClock() {
+        const ahora = new Date();
+        document.getElementById('local-date').innerText = ahora.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+        document.getElementById('local-time').innerText = ahora.toLocaleTimeString('es-ES', { hour12: false });
+    }
+    setInterval(updateClock, 1000);
+
+    function togglePanel() { document.getElementById('config-panel').classList.toggle('minimized'); }
+    function abrirLink(id) { const url = document.getElementById(id).value; if(url) window.open(url, "_blank"); }
+    function resetTimer() {
+        document.getElementById('sidebar-ui').classList.remove('ui-hidden');
+        document.getElementById('config-panel').classList.remove('ui-hidden');
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+            if(!document.getElementById('config-panel').matches(':hover')) {
+                document.getElementById('sidebar-ui').classList.add('ui-hidden');
+                document.getElementById('config-panel').classList.add('ui-hidden');
+            }
+        }, 10000);
+    }
+</script>
+</body>
+</html>
